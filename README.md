@@ -10,6 +10,5 @@ Material de clases de Genómica UV.
 | 01 · Hoja de flujo metodológico (tamaño oficio) | [PDF](secuenciacion/01_hoja_flujo_metodologico.pdf) | [DOCX](secuenciacion/01_hoja_flujo_metodologico.docx) |
 | 02 · Fichas de apoyo | [PDF](secuenciacion/02_fichas_apoyo.pdf) | [DOCX](secuenciacion/02_fichas_apoyo.docx) |
 | 03 · Tarjetas de caso | [PDF](secuenciacion/03_tarjetas_caso.pdf) | [DOCX](secuenciacion/03_tarjetas_caso.docx) |
-| 04 · Tarjetas de imprevisto | [PDF](secuenciacion/04_tarjetas_imprevisto.pdf) | [DOCX](secuenciacion/04_tarjetas_imprevisto.docx) |
 | 05 · Lista de autorrevisión | [PDF](secuenciacion/05_lista_autorrevision.pdf) | [DOCX](secuenciacion/05_lista_autorrevision.docx) |
 | 06 · Ticket de salida | [PDF](secuenciacion/06_ticket_salida.pdf) | [DOCX](secuenciacion/06_ticket_salida.docx) |
