@@ -1,5 +1,87 @@
 // Archivo generado por construir_datos.py. No editar a mano.
 export const VERIFICACION = "1283e7c8ad6f4f578529500a32169243e279abdfbaf68fee2286d09965e4d97b";
+export const OPCIONES = {
+ "CONSERVACION": [
+  "Congelación rápida (nitrógeno líquido o hielo seco) y −80 °C",
+  "Congelado a −20 °C",
+  "Etanol 96 %",
+  "Estabilizante de ARN (RNAlater)",
+  "Refrigerado (4 °C) por pocas horas y luego congelado",
+  "Temperatura ambiente"
+ ],
+ "ACIDOS": [
+  "ADN",
+  "ARN (que luego se convierte a ADNc)",
+  "ADN de alto peso molecular (fragmentos muy largos)",
+  "ADN y ARN"
+ ],
+ "RAZONES_ACIDO": [
+  "La pregunta es sobre lo que TIENE el organismo en su genoma",
+  "La pregunta es sobre lo que se está EXPRESANDO",
+  "El organismo es un virus de ARN",
+  "Necesito fragmentos muy largos para usar lecturas largas"
+ ],
+ "CALIDAD": [
+  "Cantidad (ng/µL)",
+  "Pureza A260/280 (proteínas, fenol)",
+  "Pureza A260/230 (sales, húmicos, polisacáridos)",
+  "Integridad del ADN en gel",
+  "Integridad del ARN (RIN)",
+  "Tamaño de los fragmentos de ADN",
+  "Una sola banda de PCR del tamaño esperado"
+ ],
+ "ESTRATEGIAS": [
+  "Un gen por PCR",
+  "Amplicón masivo (metabarcoding)",
+  "Genoma completo (WGS)",
+  "Metagenómica shotgun",
+  "RNA-seq"
+ ],
+ "RAZONES_ESTRATEGIA": [
+  "Basta una región conocida del genoma",
+  "La muestra es una mezcla de muchos organismos",
+  "Necesito comparar genomas completos con alta resolución",
+  "Necesito ensamblar un genoma nuevo",
+  "Necesito medir la expresión de muchos genes",
+  "Son muchas muestras: uso códigos de barra"
+ ],
+ "PLATAFORMAS": [
+  "Sanger",
+  "Lecturas cortas (Illumina, MGI o AVITI)",
+  "Ion Torrent",
+  "Lecturas largas exactas (PacBio HiFi)",
+  "Lecturas largas portátiles (Oxford Nanopore)",
+  "Combinación de lecturas cortas y largas"
+ ],
+ "RAZONES_PLATAFORMA": [
+  "Es un fragmento corto en pocas muestras",
+  "Necesito miles o millones de lecturas",
+  "Necesito un error muy bajo para detectar diferencias de una base",
+  "Necesito resolver regiones repetidas o ensamblar un genoma",
+  "Necesito portabilidad o un resultado rápido en terreno",
+  "La muestra es una mezcla de secuencias distintas"
+ ],
+ "CONTROLES": [
+  "Negativo de extracción (blanco)",
+  "Negativo de PCR (sin templado)",
+  "Control positivo",
+  "Blanco de campo",
+  "Comunidad simulada (mock)",
+  "Grupo control experimental",
+  "Réplicas biológicas",
+  "Muestra de referencia de identidad conocida"
+ ],
+ "LIMITACIONES": [
+  "Solo estudio un fragmento, no el genoma completo",
+  "Depende de que existan secuencias de referencia",
+  "Una asociación no demuestra causalidad",
+  "Solo da proporciones relativas, no cantidades absolutas",
+  "Identifica en general solo hasta género",
+  "Es un solo tejido y un solo momento",
+  "El ensamblaje puede quedar incompleto por regiones repetidas",
+  "Necesito además datos no genéticos (por ejemplo, epidemiológicos)"
+ ]
+};
 export const CASOS = [
  {
   "id": "0",

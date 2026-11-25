@@ -1,81 +1,8 @@
-import { CASOS, VERIFICACION } from "./datos.js";
+import { CASOS, OPCIONES, VERIFICACION } from "./datos.js";
 
-// ------------------------------------------------------------ opciones genéricas
-const CONSERVACION = [
-  "Congelación rápida (nitrógeno líquido o hielo seco) y −80 °C",
-  "Congelado a −20 °C",
-  "Etanol 96 %",
-  "Estabilizante de ARN (RNAlater)",
-  "Refrigerado (4 °C) por pocas horas y luego congelado",
-  "Temperatura ambiente",
-];
-const ACIDOS = ["ADN", "ARN (que luego se convierte a ADNc)", "ADN de alto peso molecular (fragmentos muy largos)", "ADN y ARN"];
-const RAZONES_ACIDO = [
-  "La pregunta es sobre lo que TIENE el organismo en su genoma",
-  "La pregunta es sobre lo que se está EXPRESANDO",
-  "El organismo es un virus de ARN",
-  "Necesito fragmentos muy largos para usar lecturas largas",
-];
-const CALIDAD = [
-  "Cantidad (ng/µL)",
-  "Pureza A260/280 (proteínas, fenol)",
-  "Pureza A260/230 (sales, húmicos, polisacáridos)",
-  "Integridad del ADN en gel",
-  "Integridad del ARN (RIN)",
-  "Tamaño de los fragmentos de ADN",
-  "Una sola banda de PCR del tamaño esperado",
-];
-const ESTRATEGIAS = [
-  "Un gen por PCR",
-  "Amplicón masivo (metabarcoding)",
-  "Genoma completo (WGS)",
-  "Metagenómica shotgun",
-  "RNA-seq",
-];
-const RAZONES_ESTRATEGIA = [
-  "Basta una región conocida del genoma",
-  "La muestra es una mezcla de muchos organismos",
-  "Necesito comparar genomas completos con alta resolución",
-  "Necesito ensamblar un genoma nuevo",
-  "Necesito medir la expresión de muchos genes",
-  "Son muchas muestras: uso códigos de barra",
-];
-const PLATAFORMAS = [
-  "Sanger",
-  "Lecturas cortas (Illumina, MGI o AVITI)",
-  "Ion Torrent",
-  "Lecturas largas exactas (PacBio HiFi)",
-  "Lecturas largas portátiles (Oxford Nanopore)",
-  "Combinación de lecturas cortas y largas",
-];
-const RAZONES_PLATAFORMA = [
-  "Es un fragmento corto en pocas muestras",
-  "Necesito miles o millones de lecturas",
-  "Necesito un error muy bajo para detectar diferencias de una base",
-  "Necesito resolver regiones repetidas o ensamblar un genoma",
-  "Necesito portabilidad o un resultado rápido en terreno",
-  "La muestra es una mezcla de secuencias distintas",
-];
-const CONTROLES = [
-  "Negativo de extracción (blanco)",
-  "Negativo de PCR (sin templado)",
-  "Control positivo",
-  "Blanco de campo",
-  "Comunidad simulada (mock)",
-  "Grupo control experimental",
-  "Réplicas biológicas",
-  "Muestra de referencia de identidad conocida",
-];
-const LIMITACIONES = [
-  "Solo estudio un fragmento, no el genoma completo",
-  "Depende de que existan secuencias de referencia",
-  "Una asociación no demuestra causalidad",
-  "Solo da proporciones relativas, no cantidades absolutas",
-  "Identifica en general solo hasta género",
-  "Es un solo tejido y un solo momento",
-  "El ensamblaje puede quedar incompleto por regiones repetidas",
-  "Necesito además datos no genéticos (por ejemplo, epidemiológicos)",
-];
+// ------------------------------------------------------------ opciones genéricas (definidas en construir_datos.py)
+const { CONSERVACION, ACIDOS, RAZONES_ACIDO, CALIDAD, ESTRATEGIAS, RAZONES_ESTRATEGIA,
+  PLATAFORMAS, RAZONES_PLATAFORMA, CONTROLES, LIMITACIONES } = OPCIONES;
 
 const PASOS = [
   { titulo: "Pregunta", guia: "¿Qué quiero saber exactamente y qué dato lo respondería?",
@@ -122,7 +49,6 @@ const CLAVE_ALMACEN = "taller-seq-v1";
 const estadoInicial = () => ({ pantalla: "inicio", nombre: "", casoId: null, resp: {}, antes: null, imp: null, comentario: "" });
 let estado = cargar();
 let imprevistoDescifrado = null;
-let grabacion = null; // { blob, url, tipo }
 
 function cargar() {
   try { return { ...estadoInicial(), ...JSON.parse(localStorage.getItem(CLAVE_ALMACEN)) }; }
@@ -417,21 +343,31 @@ async function pantallaImprevisto() {
   });
 }
 
-// ------------------------------------------------------------ resumen y envío
+// ------------------------------------------------------------ resumen y envío por correo
+const CORREO_DOCENTE = "javier.tognarelli@uv.cl";
+
 function textoRespuesta(q, c, valor) {
   const ops = q.opciones(c);
   if (valor === undefined || (Array.isArray(valor) && !valor.length)) return "(sin respuesta)";
   const idx = Array.isArray(valor) ? valor : [valor];
   return idx.map((i) => (q.sinLetra ? "" : `${letra(i)}) `) + sinMarcado(ops[i])).join("; ");
 }
+const letras = (valor) => (valor === undefined ? "-" : (Array.isArray(valor) ? valor : [valor]).map(letra).join(",") || "-");
 
+// Código compacto que lee el corrector del docente (no contiene la clave).
+function codigoRespuestas() {
+  const datos = { v: 1, n: estado.nombre, c: estado.casoId, r: estado.resp };
+  const bytes = new TextEncoder().encode(JSON.stringify(datos));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// Resumen legible y completo (pantalla, copiar, descargar).
 function construirResumen() {
   const c = caso();
   const lineas = [
     "TALLER · DEL PROBLEMA BIOLÓGICO AL DATO",
     `Nombre: ${estado.nombre}`,
     `Caso: ${c.ejemplo ? "Ejemplo" : c.id} · ${sinMarcado(c.titulo)}`,
-    `Fecha: ${new Date().toLocaleString("es-CL")}`,
     "",
   ];
   PASOS.forEach((p, i) => {
@@ -444,34 +380,49 @@ function construirResumen() {
     }
     lineas.push("");
   });
-  if (!c.ejemplo) {
-    lineas.push("IMPREVISTO");
-    if (imprevistoDescifrado) {
-      const pasosOpc = PASOS.map((p, i) => `${i + 1}. ${p.titulo}`);
-      lineas.push(`- Pasos afectados: ${textoRespuesta({ sinLetra: true, opciones: () => pasosOpc }, c, estado.resp.impPasos)}`);
-      lineas.push(`- Acción: ${textoRespuesta({ opciones: () => imprevistoDescifrado.acciones }, c, estado.resp.impAccion)}`);
-    } else {
-      lineas.push("- (no abierto)");
-    }
-    lineas.push("");
+  if (!c.ejemplo && imprevistoDescifrado) {
+    const pasosOpc = PASOS.map((p, i) => `${i + 1}. ${p.titulo}`);
+    lineas.push("IMPREVISTO",
+      `- Pasos afectados: ${textoRespuesta({ sinLetra: true, opciones: () => pasosOpc }, c, estado.resp.impPasos)}`,
+      `- Acción: ${textoRespuesta({ opciones: () => imprevistoDescifrado.acciones }, c, estado.resp.impAccion)}`, "");
   }
   if (estado.comentario.trim()) lineas.push(`COMENTARIO: ${estado.comentario.trim()}`, "");
-  lineas.push(grabacion ? "Nota de voz: adjunta por separado." : "Nota de voz: no grabada.");
+  lineas.push(`CODIGO-TALLER: ${codigoRespuestas()} FIN`);
   return lineas.join("\n");
+}
+
+// Cuerpo del correo: breve (los enlaces mailto tienen límite de largo) + código para el corrector.
+function cuerpoCorreo() {
+  const c = caso();
+  const r = estado.resp;
+  const filas = PASOS.map((p, i) => `P${i + 1} ${p.titulo}: ` + p.preguntas.map((q) => letras(r[q.id])).join(" | "));
+  const partes = [
+    "Estimado profesor:",
+    "",
+    `Envío mi diseño del taller de secuenciación (caso ${c.ejemplo ? "Ejemplo" : c.id}: ${sinMarcado(c.titulo)}).`,
+    "",
+    ...filas,
+    c.ejemplo ? "" : `Imprevisto: pasos ${r.impPasos ? r.impPasos.map((x) => x + 1).join(",") : "-"} | acción ${letras(r.impAccion)}`,
+    estado.comentario.trim() ? `Comentario: ${estado.comentario.trim()}` : "",
+    "",
+    `CODIGO-TALLER: ${codigoRespuestas()} FIN`,
+    "",
+    "Saludos,",
+    estado.nombre,
+  ];
+  return partes.filter((l, i, a) => !(l === "" && a[i - 1] === "")).join("\n");
+}
+
+function enlaceCorreo() {
+  const c = caso();
+  const asunto = `Taller secuenciación · Caso ${c.ejemplo ? "Ejemplo" : c.id} · ${estado.nombre}`;
+  return `mailto:${CORREO_DOCENTE}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpoCorreo())}`;
 }
 
 const nombreArchivo = (ext) => `taller_${estado.casoId}_${estado.nombre.normalize("NFD").replace(/[^\w]+/g, "_")}.${ext}`;
 
-async function compartirTexto() {
-  const texto = construirResumen();
-  if (navigator.share) {
-    try { await navigator.share({ title: "Taller de secuenciación", text: texto }); return; }
-    catch (e) { if (e.name === "AbortError") return; }
-  }
-  await copiarTexto();
-}
 async function copiarTexto() {
-  try { await navigator.clipboard.writeText(construirResumen()); avisar("Resumen copiado. Péguelo en el mensaje al docente."); }
+  try { await navigator.clipboard.writeText(construirResumen()); avisar("Resumen copiado."); }
   catch { avisar("No se pudo copiar; use «Descargar»."); }
 }
 function descargar(blob, nombre) {
@@ -482,104 +433,40 @@ function descargar(blob, nombre) {
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
-// ------------------------------------------------------------ nota de voz
-const MAX_SEGUNDOS = 120;
-function tipoAudio() {
-  const candidatos = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
-  return window.MediaRecorder ? candidatos.find((t) => MediaRecorder.isTypeSupported?.(t)) || "" : null;
-}
-
-function montarGrabadora() {
-  const zona = $("#grabadora");
-  const tipo = tipoAudio();
-  if (tipo === null || !navigator.mediaDevices?.getUserMedia) {
-    zona.innerHTML = `<p>Este navegador no permite grabar desde la página. Grabe la nota de voz con la aplicación de mensajería y envíela junto con el resumen.</p>`;
-    return;
-  }
-  let grabador = null; let flujo = null; let partes = []; let reloj = null; let segundos = 0;
-  const pintar = () => {
-    zona.innerHTML = `
-      <div class="botones">
-        <button type="button" id="btn-grabar" class="primario">${grabador ? "Detener" : grabacion ? "Grabar de nuevo" : "Grabar nota de voz"}</button>
-        ${grabacion && !grabador ? `<button type="button" id="btn-audio" class="secundario">Enviar nota de voz</button>` : ""}
-      </div>
-      <p class="contador" role="timer" aria-live="off">${grabador ? `Grabando… ${segundos} s de ${MAX_SEGUNDOS}` : ""}</p>
-      ${grabacion && !grabador ? `<audio controls src="${grabacion.url}"></audio>` : ""}`;
-    $("#btn-grabar").onclick = alternar;
-    $("#btn-audio")?.addEventListener("click", compartirAudio);
-  };
-  const detener = () => { grabador?.state === "recording" && grabador.stop(); };
-  async function alternar() {
-    if (grabador) return detener();
-    try { flujo = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-    catch { avisar("No se pudo usar el micrófono. Revise los permisos del navegador."); return; }
-    partes = []; segundos = 0;
-    grabador = new MediaRecorder(flujo, tipo ? { mimeType: tipo } : undefined);
-    grabador.ondataavailable = (e) => e.data.size && partes.push(e.data);
-    grabador.onstop = () => {
-      clearInterval(reloj);
-      flujo.getTracks().forEach((t) => t.stop());
-      const mime = grabador.mimeType || tipo || "audio/webm";
-      if (grabacion) URL.revokeObjectURL(grabacion.url);
-      const blob = new Blob(partes, { type: mime });
-      grabacion = { blob, url: URL.createObjectURL(blob), ext: mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm" };
-      grabador = null;
-      pintar();
-      $("#vista-resumen").textContent = construirResumen();
-    };
-    grabador.start();
-    reloj = setInterval(() => {
-      segundos++;
-      const c = zona.querySelector(".contador");
-      if (c) c.textContent = `Grabando… ${segundos} s de ${MAX_SEGUNDOS}`;
-      if (segundos >= MAX_SEGUNDOS) detener();
-    }, 1000);
-    pintar();
-  }
-  async function compartirAudio() {
-    const archivo = new File([grabacion.blob], nombreArchivo(grabacion.ext), { type: grabacion.blob.type });
-    if (navigator.canShare?.({ files: [archivo] })) {
-      try { await navigator.share({ files: [archivo], title: "Nota de voz · taller" }); return; }
-      catch (e) { if (e.name === "AbortError") return; }
-    }
-    descargar(archivo, archivo.name);
-    avisar("Nota de voz descargada. Adjúntela en el mensaje al docente.");
-  }
-  pintar();
-}
-
 function pantallaFinal() {
   app.innerHTML = `
     <h2>Enviar al docente</h2>
-    <p>Revise su resumen y envíelo por el medio que indique el docente (correo, WhatsApp o Aula Virtual).</p>
+    <p>Toque <strong>Enviar por correo</strong>: se abrirá Outlook (o su aplicación de correo) con el mensaje listo para <strong>${CORREO_DOCENTE}</strong>. Solo debe presionar «Enviar».</p>
     <div class="campo">
       <label for="comentario">Comentario breve (opcional)</label>
-      <textarea id="comentario" name="comentario" rows="3" maxlength="400">${escapar(estado.comentario)}</textarea>
+      <textarea id="comentario" name="comentario" rows="3" maxlength="300">${escapar(estado.comentario)}</textarea>
     </div>
-    <h3>Nota de voz (hasta 2 minutos)</h3>
-    <p>Recorra su flujo en voz alta: qué decidió en cada paso, por qué, y cómo resolvió el imprevisto.</p>
-    <div class="grabadora" id="grabadora"></div>
-    <h3>Resumen</h3>
     <div class="botones">
-      <button type="button" id="btn-compartir" class="primario">Enviar resumen</button>
-      <button type="button" id="btn-copiar" class="secundario">Copiar</button>
-      <button type="button" id="btn-descargar" class="secundario">Descargar</button>
+      <a class="boton primario" id="btn-correo" href="#">Enviar por correo</a>
     </div>
+    <details class="caso">
+      <summary>¿No se abrió el correo?</summary>
+      <p>Copie el resumen y péguelo en un correo nuevo a ${CORREO_DOCENTE}, o descárguelo y adjúntelo.</p>
+      <div class="botones">
+        <button type="button" id="btn-copiar" class="secundario">Copiar resumen</button>
+        <button type="button" id="btn-descargar" class="secundario">Descargar</button>
+      </div>
+    </details>
+    <h3>Su resumen</h3>
     <pre class="resumen" id="vista-resumen" tabindex="0" aria-label="Resumen de sus respuestas"></pre>
     <div class="botones">
       <button type="button" id="btn-reiniciar" class="secundario">Empezar de nuevo</button>
     </div>`;
   const vista = $("#vista-resumen");
-  vista.textContent = construirResumen();
-  $("#comentario").addEventListener("input", (e) => { estado.comentario = e.target.value; guardar(); vista.textContent = construirResumen(); });
-  $("#btn-compartir").onclick = compartirTexto;
+  const actualizar = () => { vista.textContent = construirResumen(); $("#btn-correo").href = enlaceCorreo(); };
+  actualizar();
+  $("#comentario").addEventListener("input", (e) => { estado.comentario = e.target.value; guardar(); actualizar(); });
   $("#btn-copiar").onclick = copiarTexto;
   $("#btn-descargar").onclick = () => descargar(new Blob([construirResumen()], { type: "text/plain;charset=utf-8" }), nombreArchivo("txt"));
   $("#btn-reiniciar").onclick = () => {
     if (!confirm("Se borrarán sus respuestas de este teléfono. ¿Continuar?")) return;
-    estado = estadoInicial(); imprevistoDescifrado = null; grabacion = null; guardar(); ir("inicio");
+    estado = estadoInicial(); imprevistoDescifrado = null; guardar(); ir("inicio");
   };
-  montarGrabadora();
   configurarBarra({ atras: () => ir("paso-8") });
 }
 
