@@ -143,6 +143,7 @@ button {
   cursor: pointer;
 }
 button.primario, a.boton.primario { background: var(--verde); color: white; font-weight: 700; }
+a.boton.secundario { background: white; color: var(--verde); font-weight: 600; }
 a.boton {
   display: inline-flex;
   align-items: center;

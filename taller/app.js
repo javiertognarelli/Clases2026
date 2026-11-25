@@ -128,7 +128,7 @@ function pantallaInicio() {
   const opciones = CASOS.map((c) => `
     <label class="opcion">
       <input type="radio" name="caso" value="${c.id}" ${estado.casoId === c.id ? "checked" : ""}>
-      <span><span class="letra">${c.ejemplo ? "Ejemplo" : "Caso " + c.id}</span> · ${escapar(c.nivel)}<br>${marcado(c.titulo)}</span>
+      <span><span class="letra">${c.ejemplo ? "Ejemplo (lo resuelve el docente)" : "Caso " + c.id}</span><br>${marcado(c.titulo)}</span>
     </label>`).join("");
   app.innerHTML = `
     <h1>Del problema biológico al dato</h1>
@@ -413,10 +413,18 @@ function cuerpoCorreo() {
   return partes.filter((l, i, a) => !(l === "" && a[i - 1] === "")).join("\n");
 }
 
-function enlaceCorreo() {
+function asuntoCorreo() {
   const c = caso();
-  const asunto = `Taller secuenciación · Caso ${c.ejemplo ? "Ejemplo" : c.id} · ${estado.nombre}`;
-  return `mailto:${CORREO_DOCENTE}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpoCorreo())}`;
+  return `Taller secuenciación · Caso ${c.ejemplo ? "Ejemplo" : c.id} · ${estado.nombre}`;
+}
+// Aplicación de correo predeterminada del dispositivo (en computadores sin cliente de correo no hace nada).
+function enlaceCorreo() {
+  return `mailto:${CORREO_DOCENTE}?subject=${encodeURIComponent(asuntoCorreo())}&body=${encodeURIComponent(cuerpoCorreo())}`;
+}
+// Outlook en el navegador (cuenta institucional UV); funciona en cualquier equipo con sesión iniciada.
+function enlaceOutlookWeb() {
+  const p = new URLSearchParams({ to: CORREO_DOCENTE, subject: asuntoCorreo(), body: cuerpoCorreo() });
+  return `https://outlook.office.com/mail/deeplink/compose?${p.toString().replace(/\+/g, "%20")}`;
 }
 
 const nombreArchivo = (ext) => `taller_${estado.casoId}_${estado.nombre.normalize("NFD").replace(/[^\w]+/g, "_")}.${ext}`;
@@ -436,14 +444,16 @@ function descargar(blob, nombre) {
 function pantallaFinal() {
   app.innerHTML = `
     <h2>Enviar al docente</h2>
-    <p>Toque <strong>Enviar por correo</strong>: se abrirá Outlook (o su aplicación de correo) con el mensaje listo para <strong>${CORREO_DOCENTE}</strong>. Solo debe presionar «Enviar».</p>
+    <p>Elija una opción: se abrirá un correo ya redactado para <strong>${CORREO_DOCENTE}</strong>. Solo debe presionar «Enviar».</p>
     <div class="campo">
       <label for="comentario">Comentario breve (opcional)</label>
       <textarea id="comentario" name="comentario" rows="3" maxlength="300">${escapar(estado.comentario)}</textarea>
     </div>
     <div class="botones">
-      <a class="boton primario" id="btn-correo" href="#">Enviar por correo</a>
+      <a class="boton primario" id="btn-outlook" href="#" target="_blank" rel="noopener">Enviar con Outlook web (cuenta UV)</a>
+      <a class="boton secundario" id="btn-correo" href="#">Enviar con la app de correo</a>
     </div>
+    <p class="ayuda">Si usa un computador, prefiera Outlook web: la otra opción solo funciona si el equipo tiene un programa de correo configurado.</p>
     <details class="caso">
       <summary>¿No se abrió el correo?</summary>
       <p>Copie el resumen y péguelo en un correo nuevo a ${CORREO_DOCENTE}, o descárguelo y adjúntelo.</p>
@@ -458,7 +468,11 @@ function pantallaFinal() {
       <button type="button" id="btn-reiniciar" class="secundario">Empezar de nuevo</button>
     </div>`;
   const vista = $("#vista-resumen");
-  const actualizar = () => { vista.textContent = construirResumen(); $("#btn-correo").href = enlaceCorreo(); };
+  const actualizar = () => {
+    vista.textContent = construirResumen();
+    $("#btn-correo").href = enlaceCorreo();
+    $("#btn-outlook").href = enlaceOutlookWeb();
+  };
   actualizar();
   $("#comentario").addEventListener("input", (e) => { estado.comentario = e.target.value; guardar(); actualizar(); });
   $("#btn-copiar").onclick = copiarTexto;
