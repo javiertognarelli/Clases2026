@@ -1,3 +1,1 @@
-// Dirección de la aplicación web de Google Apps Script (termina en /exec).
-// Se completa después de publicar el script; mientras esté vacía, la página no permite comenzar.
-export const URL_SERVIDOR = "";
+export const URL_SERVIDOR = "https://script.google.com/macros/s/AKfycbwHWvaeRKHT2hF6Fn9KYj_OLDDgNqdlRrkIdigmKCQY_ocXzjc0lykjoo5l-MIueSKg/exec";
