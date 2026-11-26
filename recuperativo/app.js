@@ -1,96 +1,134 @@
 import { CASOS } from "./datos.js";
+import { URL_SERVIDOR } from "./config.js";
 
-const MINUTOS = 30;
-const CORREO_DOCENTE = "javier.tognarelli@uv.cl";
-const CLAVE_ALMACEN = "recuperativo-seq-v1";
+// El registro (inicio, término y respuestas) vive en una planilla de Google (ver google/Codigo.gs).
+// «?servidor=…» solo se usa para pruebas locales.
+const SERVIDOR = new URLSearchParams(location.search).get("servidor") || URL_SERVIDOR;
+const CLAVE_ALMACEN = "recuperativo-seq-v2";
 
-const inicial = () => ({ nombre: "", casoId: null, t0: null, t1: null, resp: [] });
-let estado = cargar();
+let sesion = cargar();          // { codigo }
+let srv = null;                 // última respuesta del servidor
+let desfase = 0;                // hora del servidor − hora local
+let resp = [];
 let tic = null;
+let temporizadorGuardado = null;
 
-function cargar() {
-  try { return { ...inicial(), ...JSON.parse(localStorage.getItem(CLAVE_ALMACEN)) }; } catch { return inicial(); }
-}
-function guardar() { try { localStorage.setItem(CLAVE_ALMACEN, JSON.stringify(estado)); } catch { /* sin almacenamiento */ } }
+function cargar() { try { return JSON.parse(localStorage.getItem(CLAVE_ALMACEN)) || {}; } catch { return {}; } }
+function guardarLocal() { try { localStorage.setItem(CLAVE_ALMACEN, JSON.stringify(sesion)); } catch { /* sin almacenamiento */ } }
 
 const $ = (s) => document.querySelector(s);
 const app = $("#app");
-const caso = () => CASOS.find((c) => c.id === estado.casoId);
 const letra = (i) => "abcd"[i];
 const escapar = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const marcado = (t) => escapar(t).replace(/\*(.+?)\*/g, "<em>$1</em>");
-const plano = (t) => String(t).replace(/\*/g, "");
+const caso = () => CASOS.find((c) => c.id === srv?.caso);
+const ahora = () => Date.now() + desfase;
+const finMs = () => srv.inicio + srv.minutos * 60000;
 
-function avisar(t) {
+const MENSAJES = {
+  codigo_invalido: "El código no existe. Revíselo (sin espacios) o consulte al docente.",
+  sin_asignar: "Su código aún no tiene un caso asignado. Avise al docente.",
+  cerrado: "Su evaluación ya está cerrada.",
+  red: "No hay conexión con el servidor. Revise internet e intente de nuevo.",
+};
+
+function avisar(t, fijo = false) {
   $("#aviso").textContent = t;
   clearTimeout(avisar.t);
-  avisar.t = setTimeout(() => { $("#aviso").textContent = ""; }, 3500);
+  if (!fijo) avisar.t = setTimeout(() => { $("#aviso").textContent = ""; }, 4000);
 }
-
 function barra(texto, accion) {
-  const nav = $("#navegacion");
-  nav.hidden = !texto;
-  const b = $("#btn-principal");
-  b.textContent = texto || "";
-  b.onclick = accion || null;
+  $("#navegacion").hidden = !texto;
+  $("#btn-principal").textContent = texto || "";
+  $("#btn-principal").onclick = accion || null;
 }
 
-const restanteMs = () => estado.t0 + MINUTOS * 60000 - Date.now();
+async function llamar(accion, extra = {}) {
+  const p = new URLSearchParams({ accion, codigo: sesion.codigo, ...extra });
+  let r;
+  try {
+    const res = await fetch(`${SERVIDOR}?${p}`, { method: "GET", cache: "no-store" });
+    r = await res.json();
+  } catch {
+    return { ok: false, error: "red" };
+  }
+  if (r.ahora) desfase = r.ahora - Date.now();
+  if (r.nombre) srv = r;
+  return r;
+}
 
-function dibujar() {
+const textoResp = () => resp.map((v) => (v === null || v === undefined ? "-" : v)).join(",");
+
+// ------------------------------------------------------------ pantallas
+function pantallaCodigo(mensaje = "") {
   clearInterval(tic);
   $("#reloj").hidden = true;
-  if (!estado.t0 || !caso()) return pantallaInicio();
-  if (estado.t1 || restanteMs() <= 0) {
-    if (!estado.t1) { estado.t1 = estado.t0 + MINUTOS * 60000; guardar(); }
-    return pantallaFinal();
+  if (!SERVIDOR) {
+    app.innerHTML = `<h1>¿Dónde está el error?</h1><p class="recuadro imprevisto">La evaluación aún no está habilitada. Vuelva a intentarlo cuando el docente lo indique.</p>`;
+    barra(null);
+    return;
   }
-  return pantallaEvaluacion();
-}
-
-// ------------------------------------------------------------ inicio
-function pantallaInicio() {
   app.innerHTML = `
     <h1>¿Dónde está el error?</h1>
-    <div class="recuadro imprevisto">
-      <p><strong>Tiene ${MINUTOS} minutos y una sola oportunidad.</strong> El tiempo empieza a correr al tocar «Comenzar» y no se detiene aunque cierre la página. Cuando se acabe, se envía lo que haya respondido.</p>
-      <p>Verá un diseño experimental ya hecho, de 8 pasos. Algunos pasos tienen errores. En cada paso, decida si está correcto o elija la corrección adecuada. Responda rápido: no hay tiempo para investigar cada paso.</p>
-    </div>
-    <form id="form-inicio" novalidate>
+    <p>Ingrese el código personal que le envió el docente.</p>
+    <form id="form-codigo" novalidate>
       <div class="campo">
-        <label for="nombre">Su nombre y apellido</label>
-        <input type="text" id="nombre" autocomplete="name" enterkeyhint="done" required value="${escapar(estado.nombre)}">
+        <label for="codigo">Código personal</label>
+        <input type="text" id="codigo" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false"
+               enterkeyhint="go" aria-describedby="error-codigo" value="${escapar(sesion.codigo || "")}" required>
+        <p class="error" id="error-codigo" ${mensaje ? "" : "hidden"}>${escapar(mensaje)}</p>
       </div>
-      <fieldset id="grupo-caso">
-        <legend>Caso asignado por el docente</legend>
-        <p class="error" id="error-caso" hidden>Elija su caso.</p>
-        ${CASOS.map((c) => `
-          <label class="opcion"><input type="radio" name="caso" value="${c.id}" ${estado.casoId === c.id ? "checked" : ""}>
-          <span><span class="letra">Caso ${c.id}</span><br>${marcado(c.titulo)}</span></label>`).join("")}
-      </fieldset>
     </form>`;
-  barra("Comenzar (inicia el tiempo)", () => {
-    const nombre = $("#nombre").value.trim();
-    const elegido = app.querySelector('input[name="caso"]:checked');
-    if (!nombre) { $("#nombre").setAttribute("aria-invalid", "true"); $("#nombre").focus(); avisar("Escriba su nombre."); return; }
-    if (!elegido) { $("#error-caso").hidden = false; avisar("Elija su caso."); return; }
-    if (!confirm(`Al comenzar parten los ${MINUTOS} minutos. ¿Listo?`)) return;
-    Object.assign(estado, { nombre, casoId: elegido.value, t0: Date.now(), t1: null, resp: [] });
-    guardar();
-    dibujar();
+  const enviar = async () => {
+    const codigo = $("#codigo").value.trim().toUpperCase();
+    if (!codigo) { $("#codigo").focus(); return; }
+    sesion = { codigo };
+    barra("Buscando…", null);
+    const r = await llamar("consultar");
+    if (!r.ok) { sesion = {}; guardarLocal(); return pantallaCodigo(MENSAJES[r.error] || "No se pudo continuar."); }
+    guardarLocal();
+    decidir();
+  };
+  $("#form-codigo").addEventListener("submit", (e) => { e.preventDefault(); enviar(); });
+  $("#codigo").addEventListener("input", () => { $("#error-codigo").hidden = true; });
+  barra("Continuar", enviar);
+}
+
+function decidir() {
+  if (srv.termino) return pantallaCerrada();
+  if (srv.inicio) { resp = srv.respuestas || []; return pantallaEvaluacion(); }
+  return pantallaBienvenida();
+}
+
+function pantallaBienvenida() {
+  const c = caso();
+  app.innerHTML = `
+    <h1>Hola, ${escapar(srv.nombre)}</h1>
+    <p>Su caso es el <strong>${c.id}: ${marcado(c.titulo)}</strong>.</p>
+    <div class="recuadro imprevisto">
+      <p><strong>Tiene ${srv.minutos} minutos y una sola oportunidad.</strong> El tiempo empieza al tocar «Comenzar» y no se detiene aunque cierre la página o cambie de dispositivo. Al volver a entrar con su código, continuará donde iba.</p>
+      <p>Verá un diseño experimental de 8 pasos. Algunos pasos tienen errores. En cada paso, decida si está correcto o elija la corrección adecuada. Responda rápido: no hay tiempo para investigar cada paso.</p>
+      <p>Sus respuestas se guardan solas; no necesita enviar correo.</p>
+    </div>
+    <p><button type="button" class="secundario" id="btn-otro">No soy yo / cambiar código</button></p>`;
+  $("#btn-otro").onclick = () => { sesion = {}; guardarLocal(); pantallaCodigo(); };
+  barra("Comenzar (inicia el tiempo)", async () => {
+    if (!confirm(`Al comenzar parten los ${srv.minutos} minutos. ¿Listo?`)) return;
+    barra("Iniciando…", null);
+    const r = await llamar("iniciar");
+    if (!r.ok) { avisar(MENSAJES[r.error] || "No se pudo iniciar."); return pantallaBienvenida(); }
+    decidir();
     window.scrollTo({ top: 0 });
   });
 }
 
-// ------------------------------------------------------------ evaluación
 function pintarReloj() {
-  const ms = Math.max(0, restanteMs());
+  const ms = Math.max(0, finMs() - ahora());
   const m = Math.floor(ms / 60000);
   const s = Math.floor((ms % 60000) / 1000);
-  const r = $("#reloj");
-  r.hidden = false;
-  r.textContent = `Tiempo restante: ${m}:${String(s).padStart(2, "0")}`;
-  r.classList.toggle("poco", ms < 5 * 60000);
+  $("#reloj").hidden = false;
+  $("#reloj").textContent = `Tiempo restante: ${m}:${String(s).padStart(2, "0")}`;
+  $("#reloj").classList.toggle("poco", ms < 5 * 60000);
   if (ms <= 0) terminar(true);
 }
 
@@ -100,6 +138,7 @@ function pantallaEvaluacion() {
     <h1>Caso ${c.id} · ${marcado(c.titulo)}</h1>
     <p class="tipo">${marcado(c.tipo)}</p>
     <p>${marcado(c.contexto)}</p>
+    <p class="ayuda" id="estado-guardado" role="status" aria-live="polite">Respuestas guardadas.</p>
     <form id="form-eval" novalidate>
       ${c.pasos.map((p, n) => `
         <h2 class="paso-titulo">Paso ${n + 1} · ${escapar(p.paso)}</h2>
@@ -107,80 +146,74 @@ function pantallaEvaluacion() {
         <fieldset id="grupo-${n}">
           <legend>¿Qué hace con este paso?</legend>
           ${p.opciones.map((o, i) => `
-            <label class="opcion"><input type="radio" name="p${n}" value="${i}" ${estado.resp[n] === i ? "checked" : ""}>
+            <label class="opcion"><input type="radio" name="p${n}" value="${i}" ${resp[n] === i ? "checked" : ""}>
             <span><span class="letra">${letra(i)})</span> ${marcado(o)}</span></label>`).join("")}
         </fieldset>`).join("")}
     </form>`;
   $("#form-eval").addEventListener("change", (e) => {
-    const n = Number(e.target.name.slice(1));
-    estado.resp[n] = Number(e.target.value);
-    guardar();
+    resp[Number(e.target.name.slice(1))] = Number(e.target.value);
+    for (let i = 0; i < 8; i++) if (resp[i] === undefined) resp[i] = null;
+    programarGuardado();
   });
   barra("Terminar y enviar", () => terminar(false));
+  clearInterval(tic);
   pintarReloj();
   tic = setInterval(pintarReloj, 1000);
 }
 
-function terminar(porTiempo) {
-  if (estado.t1) return;
+function programarGuardado() {
+  $("#estado-guardado").textContent = "Guardando…";
+  clearTimeout(temporizadorGuardado);
+  temporizadorGuardado = setTimeout(guardarRemoto, 800);
+}
+async function guardarRemoto() {
+  const r = await llamar("guardar", { r: textoResp() });
+  const est = $("#estado-guardado");
+  if (r.ok) { if (est) est.textContent = "Respuestas guardadas."; return; }
+  if (r.error === "cerrado") { srv.termino = srv.termino || Date.now(); return pantallaCerrada(); }
+  if (est) est.textContent = "Sin conexión: se reintentará al marcar otra respuesta o al terminar.";
+}
+
+let terminando = false;
+async function terminar(porTiempo) {
+  if (terminando) return;
   if (!porTiempo) {
-    const faltan = caso().pasos.length - estado.resp.filter((v) => v !== undefined && v !== null).length;
-    if (!confirm(faltan ? `Le faltan ${faltan} paso(s) por responder. ¿Terminar de todas formas?` : "¿Terminar y enviar? Ya no podrá cambiar sus respuestas.")) return;
+    const faltan = resp.filter((v) => v !== null && v !== undefined).length;
+    const n = caso().pasos.length - faltan;
+    if (!confirm(n ? `Le faltan ${n} paso(s). ¿Terminar de todas formas?` : "¿Terminar? Ya no podrá cambiar sus respuestas.")) return;
   }
+  terminando = true;
   clearInterval(tic);
-  estado.t1 = Date.now();
-  guardar();
-  dibujar();
-  window.scrollTo({ top: 0 });
-  if (porTiempo) avisar("Se acabó el tiempo. Envíe sus respuestas.");
+  clearTimeout(temporizadorGuardado);
+  barra("Enviando…", null);
+  for (let intento = 0; intento < 5; intento++) {
+    const r = await llamar("terminar", { r: textoResp() });
+    if (r.ok || r.error === "cerrado") { terminando = false; return pantallaCerrada(porTiempo); }
+    await new Promise((ok) => setTimeout(ok, 2000));
+  }
+  terminando = false;
+  avisar("No se pudo enviar. Revise su conexión.", true);
+  barra("Reintentar envío", () => terminar(true));
 }
 
-// ------------------------------------------------------------ envío
-function codigo() {
-  const datos = { v: 1, n: estado.nombre, c: estado.casoId, r: estado.resp, t0: estado.t0, t1: estado.t1 };
-  const bytes = new TextEncoder().encode(JSON.stringify(datos));
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-const minutosUsados = () => Math.round((estado.t1 - estado.t0) / 6000) / 10;
-
-function cuerpoCorreo() {
-  const c = caso();
-  const lineas = c.pasos.map((p, n) => `P${n + 1} ${p.paso}: ${estado.resp[n] === undefined || estado.resp[n] === null ? "-" : letra(estado.resp[n])}`);
-  return [
-    "Estimado profesor:", "",
-    `Envío mi evaluación recuperativa (caso ${c.id}: ${plano(c.titulo)}).`, "",
-    ...lineas, "",
-    `Tiempo usado: ${String(minutosUsados()).replace(".", ",")} min`, "",
-    `CODIGO-RECUP: ${codigo()} FIN`, "",
-    "Saludos,", estado.nombre,
-  ].join("\n");
-}
-const asunto = () => `Recuperativo taller secuenciación · Caso ${estado.casoId} · ${estado.nombre}`;
-const enlaceCorreo = () => `mailto:${CORREO_DOCENTE}?subject=${encodeURIComponent(asunto())}&body=${encodeURIComponent(cuerpoCorreo())}`;
-function enlaceOutlookWeb() {
-  const p = new URLSearchParams({ to: CORREO_DOCENTE, subject: asunto(), body: cuerpoCorreo() });
-  return `https://outlook.office.com/mail/deeplink/compose?${p.toString().replace(/\+/g, "%20")}`;
-}
-
-function pantallaFinal() {
+function pantallaCerrada(porTiempo = false) {
+  clearInterval(tic);
+  $("#reloj").hidden = true;
   barra(null);
+  const c = caso();
+  const r = srv.respuestas || resp;
   app.innerHTML = `
-    <h2>Enviar al docente</h2>
-    <p>Sus respuestas quedaron cerradas (tiempo usado: ${String(minutosUsados()).replace(".", ",")} min). Elija una opción: se abrirá un correo ya redactado para <strong>${CORREO_DOCENTE}</strong>. Solo debe presionar «Enviar».</p>
-    <div class="botones">
-      <a class="boton primario" id="btn-outlook" href="${escapar(enlaceOutlookWeb())}" target="_blank" rel="noopener">Enviar con Outlook web (cuenta UV)</a>
-      <a class="boton secundario" id="btn-correo" href="${escapar(enlaceCorreo())}">Enviar con la app de correo</a>
-    </div>
-    <p class="ayuda">Si usa un computador, prefiera Outlook web.</p>
-    <details class="caso">
-      <summary>¿No se abrió el correo?</summary>
-      <p>Copie el texto y péguelo en un correo nuevo a ${CORREO_DOCENTE}.</p>
-      <div class="botones"><button type="button" id="btn-copiar" class="secundario">Copiar texto</button></div>
-    </details>
-    <pre class="resumen" tabindex="0" aria-label="Texto del correo">${escapar(cuerpoCorreo())}</pre>`;
-  $("#btn-copiar").onclick = async () => {
-    try { await navigator.clipboard.writeText(cuerpoCorreo()); avisar("Texto copiado."); } catch { avisar("No se pudo copiar."); }
-  };
+    <h2>Evaluación cerrada</h2>
+    <p>${porTiempo ? "Se acabó el tiempo. " : ""}Sus respuestas quedaron registradas, ${escapar(srv.nombre)}. No necesita enviar nada más.</p>
+    <p class="recuadro">Caso ${c.id}: ${marcado(c.titulo)}<br>
+      ${c.pasos.map((p, n) => `P${n + 1} ${escapar(p.paso)}: ${r[n] === null || r[n] === undefined ? "-" : letra(r[n])}`).join("<br>")}</p>`;
 }
 
-dibujar();
+// ------------------------------------------------------------ arranque
+(async () => {
+  if (!sesion.codigo || !SERVIDOR) return pantallaCodigo();
+  app.innerHTML = "<p>Cargando…</p>";
+  const r = await llamar("consultar");
+  if (!r.ok) return pantallaCodigo(MENSAJES[r.error] || "");
+  decidir();
+})();
